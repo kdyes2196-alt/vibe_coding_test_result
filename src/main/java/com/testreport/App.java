@@ -3,12 +3,9 @@ package com.testreport;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.Instant;
@@ -16,7 +13,6 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.ConsoleHandler;
@@ -31,11 +27,12 @@ import java.util.stream.Stream;
  * 통합테스트 현황 자동 갱신 · 메일 발송 프로그램.
  *
  * <pre>
- * java -jar test-report-mailer.jar [--config 설정파일] [--daemon] [--dry-run] [--force]
+ * java -jar test-report-mailer.jar [--config 설정파일] [--daemon] [--dry-run] [--force] [--as-of 시각]
  *   (옵션 없음)  1회 실행 후 종료 (Windows 작업 스케줄러에서 호출하는 방식)
  *   --daemon     프로그램을 켜 둔 채 schedule.times 시각마다 실행
  *   --dry-run    엑셀만 만들고 메일은 보내지 않음 (본문은 output/*.html 로 저장)
  *   --force      mail.skipIfUnchanged 설정과 관계없이 발송
+ *   --as-of      원장을 이 시각 기준으로 조회 (예: 2026-01-01T09:00, 검증용)
  * </pre>
  */
 public final class App {
@@ -46,11 +43,18 @@ public final class App {
     private final AppConfig config;
     private final boolean dryRun;
     private final boolean force;
+    private final LocalDateTime asOf;
 
     App(AppConfig config, boolean dryRun, boolean force) {
+        this(config, dryRun, force, null);
+    }
+
+    /** @param asOf 원장 조회 기준 시각. null 이면 실행 시점 (검증 시 과거 시점 재현용) */
+    App(AppConfig config, boolean dryRun, boolean force, LocalDateTime asOf) {
         this.config = config;
         this.dryRun = dryRun;
         this.force = force;
+        this.asOf = asOf;
     }
 
     public static void main(String[] args) throws Exception {
@@ -58,12 +62,14 @@ public final class App {
         boolean daemon = false;
         boolean dryRun = false;
         boolean force = false;
+        LocalDateTime asOf = null;
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
                 case "--config" -> configFile = Path.of(args[++i]);
                 case "--daemon" -> daemon = true;
                 case "--dry-run" -> dryRun = true;
                 case "--force" -> force = true;
+                case "--as-of" -> asOf = LocalDateTime.parse(args[++i]);
                 default -> {
                     System.err.println("알 수 없는 옵션: " + args[i]);
                     System.exit(2);
@@ -73,7 +79,7 @@ public final class App {
 
         AppConfig config = new AppConfig(configFile);
         setupLogging(config.logDir());
-        App app = new App(config, dryRun, force);
+        App app = new App(config, dryRun, force, asOf);
 
         if (daemon) {
             app.runForever();
@@ -95,22 +101,22 @@ public final class App {
     }
 
     void runOnce() throws Exception {
-        LocalDateTime now = LocalDateTime.now().truncatedTo(ChronoUnit.MINUTES);
+        LocalDateTime now = (asOf != null ? asOf : LocalDateTime.now()).truncatedTo(ChronoUnit.MINUTES);
         Path source = config.sourceFile();
         Path rawFile = config.rawCountsFile();
-        LOG.info("현황 갱신 시작: " + source);
-
-        String hash = fingerprint(source, rawFile);
-        Path hashFile = config.stateDir().resolve("last_sent.sha256");
-        if (config.skipIfUnchanged() && !force && !dryRun && Files.exists(hashFile)
-                && Files.readString(hashFile).trim().equals(hash)) {
-            LOG.info("지난 발송 이후 원본 변경이 없어 발송을 건너뜁니다.");
-            return;
-        }
+        LOG.info("현황 갱신 시작: " + source + (asOf != null ? " (기준시각 " + now + ")" : ""));
 
         Path output;
         StatusSummary summary;
+        List<StatusSnapshot.Change> changes;
+        Path statusFile = config.stateDir().resolve("last_status.tsv");
         try (XSSFWorkbook wb = WorkbookUpdater.open(source)) {
+            if (config.ledgerEnabled()) {
+                List<LedgerRule> rules = LedgerRule.load(config.ledgerRulesFile());
+                var results = new LedgerChecker(config).check(rules, now);
+                int filled = new LedgerSheetUpdater(config.ledgerClearUnmatched()).apply(wb, rules, results);
+                LOG.info("원장 조회 결과 반영: 충족 " + filled + "건 (규칙 " + rules.size() + "개)");
+            }
             if (rawFile != null) {
                 Map<String, Long> counts = RawCountLoader.load(rawFile);
                 int fixed = WorkbookUpdater.injectRawCounts(wb, config.rawSheetName(), counts);
@@ -119,17 +125,24 @@ public final class App {
             WorkbookUpdater.recalculate(wb);
             summary = new SummaryExtractor(wb).extract(config.summarySheet());
 
+            Map<String, String> before = StatusSnapshot.load(statusFile);
+            changes = StatusSnapshot.diff(before, StatusSnapshot.toMap(summary));
+            if (config.skipIfUnchanged() && !force && !dryRun && changes != null && changes.isEmpty()) {
+                LOG.info("직전 실행 대비 테스트 현황 변경이 없어 발송을 건너뜁니다.");
+                return;
+            }
+
             String fileName = config.outputPattern().replace("{datetime}", FILE_TS.format(now));
             output = config.outputDir().resolve(fileName);
             WorkbookUpdater.save(wb, output);
         }
-        LOG.info(String.format("보고서 생성: %s (기관 %d, 전체 진척률 %s%%)",
-                output, summary.agencies().size(), MailBodyBuilder.fmt(summary.overallProgress())));
+        LOG.info(String.format("보고서 생성: %s (기관 %d, 전체 진척률 %s%%, 직전 대비 변경 %d건)",
+                output, summary.agencies().size(), MailBodyBuilder.fmt(summary.overallProgress()), changes == null ? 0 : changes.size()));
 
         MailBodyBuilder builder = new MailBodyBuilder(config.reportTitle(), config.warnThreshold());
         String subject = builder.subject(
                 config.get("mail.subject", "[{title}] {datetime} 기준 - 전체 진척률 {progress}%"), summary, now);
-        String html = builder.html(summary, now, output.getFileName().toString());
+        String html = builder.html(summary, changes, now, output.getFileName().toString());
 
         if (dryRun || !config.mailEnabled()) {
             Path preview = Path.of(output.toString().replaceFirst("\\.xlsx$", "") + "_메일미리보기.html");
@@ -139,9 +152,8 @@ public final class App {
             List<MailingList.Recipient> recipients = MailingList.load(config.mailingListFile());
             new MailSender(config).send(recipients, subject, html, output);
             LOG.info("메일 발송 완료: " + recipients.size() + "명 / 제목: " + subject);
-            Files.createDirectories(config.stateDir());
-            Files.writeString(hashFile, hash);
         }
+        StatusSnapshot.save(statusFile, StatusSnapshot.toMap(summary));
 
         cleanupOldOutputs();
     }
@@ -207,22 +219,6 @@ public final class App {
                     LOG.info("보관 기간 경과 파일 삭제: " + p.getFileName());
                 }
             }
-        }
-    }
-
-    private static String fingerprint(Path... files) throws IOException {
-        try {
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
-            for (Path f : files) {
-                if (f != null && Files.exists(f)) {
-                    try (InputStream in = Files.newInputStream(f)) {
-                        md.update(in.readAllBytes());
-                    }
-                }
-            }
-            return HexFormat.of().formatHex(md.digest());
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException(e);
         }
     }
 

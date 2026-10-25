@@ -2,6 +2,8 @@ package com.testreport;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -29,7 +31,8 @@ final class MailBodyBuilder {
                 .replace("{progress}", fmt(s.overallProgress()));
     }
 
-    String html(StatusSummary s, LocalDateTime at, String attachmentName) {
+    /** @param changes 직전 실행 대비 변경 (첫 실행이면 null) */
+    String html(StatusSummary s, List<StatusSnapshot.Change> changes, LocalDateTime at, String attachmentName) {
         StringBuilder h = new StringBuilder();
         h.append("<div style=\"font-family:'Malgun Gothic','맑은 고딕',sans-serif;font-size:13px;color:#222\">");
         h.append("<h2 style=\"margin:0 0 4px\">").append(esc(title)).append("</h2>");
@@ -43,6 +46,10 @@ final class MailBodyBuilder {
                 s.countBelow(warnThreshold) > 0 ? RED : null);
         kpi(h, "완료 조건", s.total("O") + " / " + (s.total("O") + s.total("X")), null);
         h.append("</tr></table>");
+
+        if (changes != null) {
+            changes(h, changes);
+        }
 
         // 진척률 구간별 기관 수 (엑셀 '전체 현황 요약' 표)
         if (!s.buckets().isEmpty()) {
@@ -89,6 +96,41 @@ final class MailBodyBuilder {
         h.append("<div style=\"color:#666\">상세 내용은 첨부파일(").append(esc(attachmentName))
                 .append(")을 확인해 주세요.<br>본 메일은 자동 발송되었습니다.</div></div>");
         return h.toString();
+    }
+
+    /** 직전 실행 대비 새로 충족 / 충족 해제된 조건을 기관별로 묶어 보여 준다. */
+    private static void changes(StringBuilder h, List<StatusSnapshot.Change> changes) {
+        h.append("<h3 style=\"margin:8px 0\">■ 직전 발송 대비 변경</h3>");
+        if (changes.isEmpty()) {
+            h.append("<div style=\"margin-bottom:16px;color:#666\">변경 없음</div>");
+            return;
+        }
+        Map<String, List<String>> done = new LinkedHashMap<>();
+        Map<String, List<String>> undone = new LinkedHashMap<>();
+        for (StatusSnapshot.Change c : changes) {
+            String item = c.messageCode() + " " + c.condition();
+            if (c.isNewlyDone()) {
+                done.computeIfAbsent(c.agency(), k -> new ArrayList<>()).add(item);
+            } else if (c.before().equals("O")) {
+                undone.computeIfAbsent(c.agency(), k -> new ArrayList<>()).add(item);
+            }
+        }
+        h.append("<table style=\"border-collapse:collapse;margin-bottom:16px\">");
+        h.append("<tr><th ").append(TH).append(">기관명</th><th ").append(TH).append(">구분</th><th ")
+                .append(TH).append(">조건</th></tr>");
+        changeRows(h, done, "신규 충족", "#e2efda", "#222");
+        changeRows(h, undone, "충족 해제", "#fce4e4", RED);
+        if (done.isEmpty() && undone.isEmpty()) {
+            h.append("<tr><td colspan=\"3\" style=\"").append(TD).append("\">충족 여부 변경 없음</td></tr>");
+        }
+        h.append("</table>");
+    }
+
+    private static void changeRows(StringBuilder h, Map<String, List<String>> items, String label, String bg, String color) {
+        items.forEach((agency, list) -> h.append("<tr><td style=\"").append(TD).append(";text-align:left\">")
+                .append(esc(agency)).append("</td><td style=\"").append(TD).append(";background:").append(bg)
+                .append(";color:").append(color).append("\">").append(label).append("</td><td style=\"")
+                .append(TD).append(";text-align:left\">").append(esc(String.join(", ", list))).append("</td></tr>"));
     }
 
     private static void kpi(StringBuilder h, String label, String value, String color) {

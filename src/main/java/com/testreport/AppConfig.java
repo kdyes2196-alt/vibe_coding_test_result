@@ -72,6 +72,16 @@ public final class AppConfig {
         return env != null && !env.isBlank() ? env : get("mail.password", "");
     }
 
+    public boolean ledgerEnabled()  { return getBool("ledger.enabled", false); }
+    public Path ledgerRulesFile()   { return Path.of(get("ledger.rules.file", "config/ledger_rules.csv")); }
+    public boolean ledgerClearUnmatched() { return getBool("ledger.clearUnmatched", true); }
+
+    /** 원장 DB 비밀번호는 환경변수 LEDGER_DB_PASSWORD 를 우선 사용한다. */
+    public String ledgerPassword() {
+        String env = System.getenv("LEDGER_DB_PASSWORD");
+        return env != null && !env.isBlank() ? env : get("ledger.jdbc.password", "");
+    }
+
     public List<LocalTime> scheduleTimes() {
         List<LocalTime> times = new ArrayList<>();
         for (String t : get("schedule.times", "09:00").split(",")) {
