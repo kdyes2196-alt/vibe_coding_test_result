@@ -53,8 +53,8 @@ class LedgerScenarioTest {
     }
 
     /** 해당 시각에 생성된 보고서를 다시 열어 요약을 읽는다. */
-    private StatusSummary report(String hhmm) throws Exception {
-        Path file = dir.resolve("output/테스트현황_20260101_" + hhmm + ".xlsx");
+    private StatusSummary report(String hour) throws Exception {
+        Path file = dir.resolve("output/테스트현황_20260101_" + hour + "시.xlsx");
         assertTrue(Files.exists(file), file + " 생성");
         try (InputStream in = Files.newInputStream(file); XSSFWorkbook wb = new XSSFWorkbook(in)) {
             return new SummaryExtractor(wb).extract(null);
@@ -80,7 +80,7 @@ class LedgerScenarioTest {
     @Test
     void 시나리오1_1월1일_9시_조회() throws Exception {
         appAt("2026-01-01T09:00").runOnce();
-        StatusSummary s = report("0900");
+        StatusSummary s = report("09");
 
         assertDone(s, "KB국민카드", 13, List.of(0, 1));     // 980001 조건1·2 → 2/15
         assertDone(s, "삼성카드", 21, List.of(0, 2, 3));     // 980001 조건1·3 + 980002 → 3/14 (삼성은 조건2 대상 아님)
@@ -92,7 +92,7 @@ class LedgerScenarioTest {
         }
 
         // 기관별 시트에 원장 거래가 근거로 기록됨
-        Path file = dir.resolve("output/테스트현황_20260101_0900.xlsx");
+        Path file = dir.resolve("output/테스트현황_20260101_09시.xlsx");
         try (InputStream in = Files.newInputStream(file); XSSFWorkbook wb = new XSSFWorkbook(in)) {
             Sheet kb = wb.getSheet("KB국민카드");
             DataFormatter f = new DataFormatter();
@@ -106,7 +106,7 @@ class LedgerScenarioTest {
     void 시나리오2_1월1일_15시_조회와_직전_대비_변경() throws Exception {
         appAt("2026-01-01T09:00").runOnce();
         appAt("2026-01-01T15:00").runOnce();
-        StatusSummary s = report("1500");
+        StatusSummary s = report("15");
 
         assertDone(s, "KB국민카드", 13, List.of(0, 1));     // 추가 진척 없음 (13시 980003 은 비정상)
         assertDone(s, "삼성카드", 29, List.of(0, 2, 3, 4));  // 980003 추가 → 4/14
@@ -136,9 +136,27 @@ class LedgerScenarioTest {
         appAt("2026-01-01T15:00", "mail.skipIfUnchanged=true").runOnce();
         appAt("2026-01-01T15:30", "mail.skipIfUnchanged=true").runOnce();
         assertEquals(2, smtp.getReceivedMessages().length, "15:30 에는 변경이 없어 발송 생략");
-        assertFalse(Files.exists(dir.resolve("output/테스트현황_20260101_1530.xlsx")));
+        assertEquals(1, xlsxCount(), "15:30 에는 보고서도 새로 만들지 않음 (15시 파일 1개)");
 
         appAt("2026-01-01T16:30", "mail.skipIfUnchanged=true").runOnce();
         assertEquals(4, smtp.getReceivedMessages().length, "16시 롯데카드 거래로 변경 발생 → 발송");
+        assertTrue(Files.exists(dir.resolve("output/테스트현황_20260101_16시.xlsx")));
+    }
+
+    @Test
+    void 파일명은_날짜_시간대로_만들고_같은_시간대에는_덮어쓴다() throws Exception {
+        appAt("2026-01-01T09:00").runOnce();
+        appAt("2026-01-01T09:40").runOnce();
+        appAt("2026-01-01T10:05").runOnce();
+        try (var files = Files.list(dir.resolve("output"))) {
+            assertEquals(List.of("테스트현황_20260101_09시.xlsx", "테스트현황_20260101_10시.xlsx"),
+                    files.map(f -> f.getFileName().toString()).filter(n -> n.endsWith(".xlsx")).sorted().toList());
+        }
+    }
+
+    private long xlsxCount() throws Exception {
+        try (var files = Files.list(dir.resolve("output"))) {
+            return files.filter(f -> f.toString().endsWith(".xlsx")).count();
+        }
     }
 }

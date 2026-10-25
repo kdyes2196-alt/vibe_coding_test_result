@@ -52,7 +52,7 @@ public final class AppConfig {
     public Path rawCountsFile()     { return getPath("rawCounts.file"); }
     public String rawSheetName()    { return get("rawCounts.sheetName", "원천데이터"); }
     public Path outputDir()         { return Path.of(get("output.dir", "output")); }
-    public String outputPattern()   { return get("output.fileNamePattern", "테스트현황_{datetime}.xlsx"); }
+    public String outputPattern()   { return get("output.fileNamePattern", "테스트현황_{date}_{hour}시.xlsx"); }
     public int outputKeepDays()     { return getInt("output.keepDays", 30); }
     public Path stateDir()          { return Path.of(get("state.dir", "state")); }
     public Path logDir()            { return Path.of(get("log.dir", "logs")); }

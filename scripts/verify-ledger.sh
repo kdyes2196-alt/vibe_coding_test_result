@@ -10,7 +10,7 @@ TIMES=("$@"); [ ${#TIMES[@]} -gt 0 ] || TIMES=(2026-01-01T09:00 2026-01-01T15:00
 rm -rf verify-output/ledger && mkdir -p verify-output/ledger
 
 for T in "${TIMES[@]}"; do
-  STAMP=$(echo "$T" | sed 's/[-:]//g; s/T/_/')
+  STAMP=$(date -d "${T/T/ }" +%Y%m%d_%H시)
   echo "================ ${T} 조회 ================"
   java -Dsun.jnu.encoding=UTF-8 -jar target/test-report-mailer.jar --config config/verify-ledger.properties \
        --dry-run --as-of "$T" 2>&1 | grep -v JAVA_TOOL | sed 's/^[0-9-]* [0-9:]* \[INFO\] /  /'

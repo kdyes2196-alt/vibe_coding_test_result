@@ -39,6 +39,8 @@ public final class App {
 
     private static final Logger LOG = Logger.getLogger(App.class.getName());
     private static final DateTimeFormatter FILE_TS = DateTimeFormatter.ofPattern("yyyyMMdd_HHmm");
+    private static final DateTimeFormatter FILE_DATE = DateTimeFormatter.ofPattern("yyyyMMdd");
+    private static final DateTimeFormatter FILE_HOUR = DateTimeFormatter.ofPattern("HH");
 
     private final AppConfig config;
     private final boolean dryRun;
@@ -138,7 +140,10 @@ public final class App {
                 return;
             }
 
-            String fileName = config.outputPattern().replace("{datetime}", FILE_TS.format(now));
+            String fileName = config.outputPattern()
+                    .replace("{datetime}", FILE_TS.format(now))
+                    .replace("{date}", FILE_DATE.format(now))
+                    .replace("{hour}", FILE_HOUR.format(now));
             output = config.outputDir().resolve(fileName);
             WorkbookUpdater.save(wb, output);
         }
