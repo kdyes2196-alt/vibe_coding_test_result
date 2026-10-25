@@ -12,8 +12,23 @@
        ├─ ③ 전체 수식 재계산 (기관별 시트 → 상세 → 요약, 조건부 서식 유지)
        ├─ ④ output/카드이동서비스채널확대_테스트현황_YYYYMMDD_HHmm.xlsx 저장
        ├─ ⑤ 요약 시트를 읽어 메일 본문 생성 (진척률 60% 미만 기관 붉은색)
-       └─ ⑥ mailing_list.csv 수신자에게 SMTP 발송 → 실패 시 관리자에게 오류 메일
+       └─ ⑥ 승인 대기(state/pending/) 저장 → (선택) 담당자에게 승인 요청 메일
+   └─ approve.bat (담당자)
+       ├─ 승인 대기 엑셀을 열어 확인
+       └─ Y: mailing_list.csv 수신자에게 발송 / N: 보류 / R: 폐기
 ```
+
+## 발송 전 담당자 승인
+
+`mail.approval.required=true`(기본)이면 정해진 시각에 보고서를 만들어 **승인 대기**로만 두고 메일은 보내지 않습니다.
+
+1. 담당자가 `scripts\approve.bat` 실행 → 승인 대기 엑셀이 열리고 제목·수신자가 표시됩니다.
+2. 내용 확인 후 `Y` 를 누르면 그 엑셀을 첨부해 메일링 리스트로 발송, `N` 은 보류, `R` 은 폐기합니다.
+3. 승인 전에 다음 회차가 실행되면 승인 대기 보고서는 최신 것으로 교체됩니다.
+4. `mail.approval.notifyTo` 에 담당자 주소를 넣으면 보고서 생성 시 **[발송 승인 요청]** 메일(엑셀 첨부)을 담당자에게만 먼저 보냅니다.
+5. 메일 본문의 '직전 발송 대비 변경'은 마지막으로 **실제 발송(승인)한** 보고서와 비교합니다.
+
+명령으로 직접: `--status`(승인 대기 확인), `--approve`(발송), `--reject`(폐기)
 
 ## 폴더 구성
 
@@ -26,6 +41,7 @@
 | `config/verify.properties` | 클라우드 검증용 설정 (`scripts/verify.sh`) |
 | `scripts/run.bat` | 1회 실행 (작업 스케줄러가 호출) |
 | `scripts/register_task.bat` | 평일 09:00 / 18:00 작업 스케줄러 등록 |
+| `scripts/approve.bat` | 승인 대기 엑셀 확인 후 발송(Y) / 보류(N) / 폐기(R) |
 | `output/` · `logs/` · `state/` | 생성 보고서(기본 30일 보관) · 실행 로그 · 마지막 발송 기록 |
 
 ## 설치 및 설정
@@ -105,15 +121,19 @@ scripts/verify-ledger.sh 2026-01-01T10:00 2026-01-01T17:00   ← 원하는 시�
 데이터는 `sandbox/ledger.mv.db` 파일에 남아 다음 실행까지 유지됩니다.
 
 ```
-scripts/ledger-db.sh reset                         ← 시나리오 원장으로 초기화 (reset empty: 빈 원장)
+scripts/ledger-db.sh reset                         ← 기본 시나리오(11건) + 추가 시나리오로 초기화 (reset empty: 빈 원장)
 scripts/ledger-db.sh add KB국민카드 980002          ← 정상 거래 1건 (현재 시각)
 scripts/ledger-db.sh add 하나카드 980001 --stat 01  ← 비정상 거래
 scripts/ledger-db.sh add 삼성카드 980001 --cond 1   ← 추가조회조건(통신요금) 거래
 scripts/ledger-db.sh add 삼성카드 980001 --paging   ← 페이징 거래
 scripts/ledger-db.sh add 삼성카드 980004 --case 재신규실패 --at "2026-01-01 16:30:00"
-scripts/ledger-db.sh list [기관명]                  ← 원장 내용 확인
-scripts/ledger-db.sh run                           ← 실행 → 기관별 진척률(직전 대비 증감), 변경 항목, 메일 캡처
+scripts/ledger-db.sh list [기관명]                  ← 원장 내용 + 현황 엑셀에 기재된 거래고유번호 표시
+scripts/ledger-db.sh run                           ← 현황 엑셀 생성 → 승인 대기 (기관별 진척률, 변경 항목, 메일 캡처)
+scripts/ledger-db.sh approve | reject | status     ← 승인 발송(가짜 SMTP 수신 확인) / 폐기 / 대기 확인
 ```
+
+- 기본 시나리오(`samples/ledger_scenario.sql`, 11건)는 자동 테스트 기대값이 묶여 있어 고정입니다.
+- `add` 로 넣은 거래는 `samples/ledger_scenario_user.sql` 에 누적 기록되어, 세션이 바뀌어도 `reset` 하면 다시 적재됩니다.
 
 자동 테스트(`src/test`)는 실제 현황 엑셀(`samples/`)로 진척률 계산, `#REF!` 연결 복구,
 메일링 리스트 처리, 발송 일정, 가짜 SMTP 서버(GreenMail)를 통한 메일·첨부 발송, 변경 없음 시 발송 생략,

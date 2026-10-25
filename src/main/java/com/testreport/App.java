@@ -28,7 +28,12 @@ import java.util.stream.Stream;
  *
  * <pre>
  * java -jar test-report-mailer.jar [--config 설정파일] [--daemon] [--dry-run] [--force] [--as-of 시각]
+ *                                  [--approve | --reject | --status]
  *   (옵션 없음)  1회 실행 후 종료 (Windows 작업 스케줄러에서 호출하는 방식)
+ *                mail.approval.required=true 면 메일 대신 '승인 대기' 보고서를 만든다
+ *   --approve    승인 대기 보고서를 메일링 리스트로 발송
+ *   --reject     승인 대기 보고서를 폐기 (발송 안 함)
+ *   --status     승인 대기 보고서 정보 출력 (없으면 종료코드 1)
  *   --daemon     프로그램을 켜 둔 채 schedule.times 시각마다 실행
  *   --dry-run    엑셀만 만들고 메일은 보내지 않음 (본문은 output/*.html 로 저장)
  *   --force      mail.skipIfUnchanged 설정과 관계없이 발송
@@ -65,6 +70,7 @@ public final class App {
         boolean dryRun = false;
         boolean force = false;
         LocalDateTime asOf = null;
+        String action = "run";
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
                 case "--config" -> configFile = Path.of(args[++i]);
@@ -72,6 +78,9 @@ public final class App {
                 case "--dry-run" -> dryRun = true;
                 case "--force" -> force = true;
                 case "--as-of" -> asOf = LocalDateTime.parse(args[++i]);
+                case "--approve" -> action = "approve";
+                case "--reject" -> action = "reject";
+                case "--status" -> action = "status";
                 default -> {
                     System.err.println("알 수 없는 옵션: " + args[i]);
                     System.exit(2);
@@ -83,10 +92,17 @@ public final class App {
         setupLogging(config.logDir());
         App app = new App(config, dryRun, force, asOf);
 
-        if (daemon) {
-            app.runForever();
-        } else {
-            System.exit(app.runSafely() ? 0 : 1);
+        switch (action) {
+            case "approve" -> System.exit(app.approveSafely() ? 0 : 1);
+            case "reject" -> System.exit(app.reject() ? 0 : 1);
+            case "status" -> System.exit(app.printPending() ? 0 : 1);
+            default -> {
+                if (daemon) {
+                    app.runForever();
+                } else {
+                    System.exit(app.runSafely() ? 0 : 1);
+                }
+            }
         }
     }
 
@@ -155,18 +171,98 @@ public final class App {
                 config.get("mail.subject", "[{title}] {datetime} 기준 - 전체 진척률 {progress}%"), summary, now);
         String html = builder.html(summary, changes, now, output.getFileName().toString());
 
+        Path preview = Path.of(output.toString().replaceFirst("\\.xlsx$", "") + "_메일미리보기.html");
+        Files.writeString(preview, "<!-- 제목: " + subject + " -->\n" + html, StandardCharsets.UTF_8);
+
         if (dryRun || !config.mailEnabled()) {
-            Path preview = Path.of(output.toString().replaceFirst("\\.xlsx$", "") + "_메일미리보기.html");
-            Files.writeString(preview, "<!-- 제목: " + subject + " -->\n" + html, StandardCharsets.UTF_8);
             LOG.info("메일 발송 생략(dry-run). 본문 미리보기: " + preview);
+            StatusSnapshot.save(statusFile, StatusSnapshot.toMap(summary));
+        } else if (config.approvalRequired()) {
+            Path pending = PendingReport.save(config, output, subject, html, now, StatusSnapshot.toMap(summary));
+            LOG.info("승인 대기 보고서 저장: " + pending + " / 담당자 확인 후 --approve 로 발송, --reject 로 폐기");
+            notifyApprover(subject, html, pending);
+            // '직전 발송 대비' 기준 상태는 실제 발송(--approve) 시점에 갱신한다
         } else {
             List<MailingList.Recipient> recipients = MailingList.load(config.mailingListFile());
             new MailSender(config).send(recipients, subject, html, output);
             LOG.info("메일 발송 완료: " + recipients.size() + "명 / 제목: " + subject);
+            StatusSnapshot.save(statusFile, StatusSnapshot.toMap(summary));
         }
-        StatusSnapshot.save(statusFile, StatusSnapshot.toMap(summary));
 
         cleanupOldOutputs();
+    }
+
+    /** 승인 대기 보고서를 메일링 리스트로 발송한다. */
+    void approve() throws Exception {
+        PendingReport.Info p = PendingReport.load(config);
+        if (p == null) {
+            throw new IllegalStateException("승인 대기 중인 보고서가 없습니다.");
+        }
+        List<MailingList.Recipient> recipients = MailingList.load(config.mailingListFile());
+        new MailSender(config).send(recipients, p.subject(), p.html(), p.report());
+        StatusSnapshot.save(config.stateDir().resolve("last_status.tsv"), p.status());
+        LOG.info("승인 발송 완료: " + recipients.size() + "명 / 제목: " + p.subject() + " / 첨부: " + p.report().getFileName());
+        for (MailingList.Recipient r : recipients) {
+            LOG.info("  " + r.type() + " " + r.email());
+        }
+        PendingReport.clear(config);
+    }
+
+    boolean approveSafely() {
+        try {
+            if (PendingReport.load(config) == null) {
+                LOG.warning("승인 대기 중인 보고서가 없습니다. 먼저 보고서를 생성해 주세요.");
+                return false;
+            }
+            approve();
+            return true;
+        } catch (Exception e) {
+            LOG.log(Level.SEVERE, "승인 발송 실패", e);
+            notifyAdmin(e);
+            return false;
+        }
+    }
+
+    boolean reject() throws IOException {
+        PendingReport.Info p = PendingReport.load(config);
+        if (p == null) {
+            LOG.info("승인 대기 중인 보고서가 없습니다.");
+            return false;
+        }
+        PendingReport.clear(config);
+        LOG.info("승인 대기 보고서를 폐기했습니다 (발송 안 함): " + p.report().getFileName());
+        return true;
+    }
+
+    boolean printPending() throws IOException {
+        PendingReport.Info p = PendingReport.load(config);
+        if (p == null) {
+            System.out.println("승인 대기 중인 보고서가 없습니다.");
+            return false;
+        }
+        System.out.println("승인 대기 보고서: " + p.report().toAbsolutePath());
+        System.out.println("생성 시각      : " + p.createdAt());
+        System.out.println("메일 제목      : " + p.subject());
+        for (MailingList.Recipient r : MailingList.load(config.mailingListFile())) {
+            System.out.println("수신자         : " + r.type() + " " + r.email());
+        }
+        return true;
+    }
+
+    /** 담당자에게 승인 요청 메일 (보고서 첨부). mail.approval.notifyTo 가 비어 있으면 생략. */
+    private void notifyApprover(String subject, String html, Path report) throws Exception {
+        String to = config.approvalNotifyTo();
+        if (to == null) {
+            return;
+        }
+        List<MailingList.Recipient> approvers = java.util.Arrays.stream(to.split(","))
+                .map(String::trim).filter(s -> !s.isEmpty())
+                .map(s -> new MailingList.Recipient("", s, MailingList.Type.TO)).toList();
+        String notice = "<div style=\"border:2px solid #c00000;padding:10px;margin-bottom:16px;font-family:'Malgun Gothic',sans-serif\">"
+                + "<b>[발송 승인 요청]</b> 아래 내용과 첨부 엑셀을 확인한 뒤, 이상이 없으면 <b>scripts\\approve.bat</b> 을 실행해 승인해 주세요.<br>"
+                + "승인 전까지 메일링 리스트로는 발송되지 않습니다.</div>";
+        new MailSender(config).send(approvers, "[발송 승인 요청] " + subject, notice + html, report);
+        LOG.info("승인 요청 메일 발송: " + to);
     }
 
     /** schedule.times 의 다음 시각까지 대기 후 실행을 반복한다. */

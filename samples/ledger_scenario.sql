@@ -1,4 +1,5 @@
--- 검증용 시나리오 원장 (H2, Oracle 호환 모드). 사용자 예시 시나리오를 재현한다.
+-- [기본 시나리오 · 고정 11건] 검증용 원장 (H2, Oracle 호환 모드). 자동 테스트(LedgerScenarioTest)의 기대값이 이 데이터에 묶여 있다.
+-- 사용자가 추가하는 시나리오는 samples/ledger_scenario_user.sql 에 쌓는다 (scripts/ledger-db.sh add).
 --  1) 1.1 09:00 조회: KB국민카드 980001 조건1·2 / 삼성카드 980001 조건1·2·3 + 980002 / 나머지 미충족
 --  2) 1.1 15:00 조회: KB국민카드 추가 진척 없음 / 삼성카드 980003 추가 / 토스뱅크 980003 / 나머지 미충족
 CREATE TABLE ONLINE_LEDG (
@@ -32,6 +33,3 @@ INSERT INTO ONLINE_LEDG VALUES (TIMESTAMP '2026-01-01 13:30:06', '374092000001',
 
 -- 하나카드 (374/374): 비정상 거래만 → 미충족
 INSERT INTO ONLINE_LEDG VALUES (TIMESTAMP '2026-01-01 14:00:07', '374000000001', '374', '374', '980003', '01', NULL, 'N', NULL, NULL);
-
--- 롯데카드 (368/368): 16시 거래 → 15시 조회에는 반영되지 않아야 함
-INSERT INTO ONLINE_LEDG VALUES (TIMESTAMP '2026-01-01 16:00:08', '368000000001', '368', '368', '980001', '00', NULL, 'N', NULL, NULL);

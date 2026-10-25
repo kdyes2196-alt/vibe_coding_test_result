@@ -63,6 +63,10 @@ public final class AppConfig {
 
     public boolean mailEnabled()    { return getBool("mail.enabled", true); }
     public boolean skipIfUnchanged(){ return getBool("mail.skipIfUnchanged", false); }
+    /** true 면 보고서를 승인 대기로 두고, 담당자가 --approve 해야 메일링 리스트로 발송한다. */
+    public boolean approvalRequired() { return getBool("mail.approval.required", false); }
+    /** 승인 요청 메일을 받을 담당자 주소 (쉼표 구분, 비우면 알림 메일 없음) */
+    public String approvalNotifyTo() { return get("mail.approval.notifyTo", null); }
     public Path mailingListFile()   { return Path.of(get("mailingList.file", "config/mailing_list.csv")); }
     public String adminEmail()      { return get("mail.adminOnError", null); }
 

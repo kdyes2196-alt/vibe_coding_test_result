@@ -14,6 +14,8 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.DriverManager;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -38,10 +40,14 @@ class LedgerScenarioTest {
     Path dir;
 
     private App appAt(String asOf, String... extra) throws Exception {
+        return appWithDb(asOf, "jdbc:h2:mem:" + dir.getFileName() + ";MODE=Oracle;INIT=RUNSCRIPT FROM '"
+                + SCENARIO_SQL.toString().replace('\\', '/') + "'", extra);
+    }
+
+    private App appWithDb(String asOf, String jdbcUrl, String... extra) throws Exception {
         String[] lines = {
                 "ledger.enabled=true",
-                "ledger.jdbc.url=jdbc:h2:mem:" + dir.getFileName() + ";MODE=Oracle;INIT=RUNSCRIPT FROM '"
-                        + SCENARIO_SQL.toString().replace('\\', '/') + "'",
+                "ledger.jdbc.url=" + jdbcUrl,
                 "ledger.jdbc.user=sa",
                 "ledger.rules.file=" + RULES.toString().replace('\\', '/'),
         };
@@ -112,7 +118,7 @@ class LedgerScenarioTest {
         assertDone(s, "삼성카드", 29, List.of(0, 2, 3, 4));  // 980003 추가 → 4/14
         assertDone(s, "토스뱅크", 25, List.of(4));          // 980003 → 1/4
         assertDone(s, "하나카드", 0, List.of());            // 비정상 거래만
-        assertDone(s, "롯데카드", 0, List.of());            // 16시 거래는 아직 반영 안 됨
+        assertDone(s, "롯데카드", 0, List.of());
 
         MimeMessage[] mails = smtp.getReceivedMessages();
         assertEquals(4, mails.length, "9시·15시 각각 수신자 2명");
@@ -133,14 +139,24 @@ class LedgerScenarioTest {
 
     @Test
     void 진척이_없으면_다음_회차_메일은_건너뛴다() throws Exception {
-        appAt("2026-01-01T15:00", "mail.skipIfUnchanged=true").runOnce();
-        appAt("2026-01-01T15:30", "mail.skipIfUnchanged=true").runOnce();
+        // 회차 사이에 거래를 추가하기 위해 파일 DB 사용
+        String url = "jdbc:h2:file:" + dir.resolve("ledger").toString().replace('\\', '/') + ";MODE=Oracle";
+        try (Connection con = DriverManager.getConnection(url, "sa", "")) {
+            con.createStatement().execute("RUNSCRIPT FROM '" + SCENARIO_SQL.toString().replace('\\', '/') + "'");
+        }
+        appWithDb("2026-01-01T15:00", url, "mail.skipIfUnchanged=true").runOnce();
+        appWithDb("2026-01-01T15:30", url, "mail.skipIfUnchanged=true").runOnce();
         assertEquals(2, smtp.getReceivedMessages().length, "15:30 에는 변경이 없어 발송 생략");
         assertEquals(1, xlsxCount(), "15:30 에는 보고서도 새로 만들지 않음 (15시 파일 1개)");
 
-        appAt("2026-01-01T16:30", "mail.skipIfUnchanged=true").runOnce();
+        try (Connection con = DriverManager.getConnection(url, "sa", "")) {
+            con.createStatement().execute("INSERT INTO ONLINE_LEDG VALUES (TIMESTAMP '2026-01-01 16:00:08', "
+                    + "'368000000001', '368', '368', '980001', '00', NULL, 'N', NULL, NULL)");
+        }
+        appWithDb("2026-01-01T16:30", url, "mail.skipIfUnchanged=true").runOnce();
         assertEquals(4, smtp.getReceivedMessages().length, "16시 롯데카드 거래로 변경 발생 → 발송");
         assertTrue(Files.exists(dir.resolve("output/테스트현황_20260101_16시.xlsx")));
+        assertDone(report("16"), "롯데카드", 7, List.of(0));
     }
 
     @Test
