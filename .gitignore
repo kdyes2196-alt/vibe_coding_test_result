@@ -1,0 +1,7 @@
+target/
+dist/
+output/
+logs/
+state/
+verify-output/
+*.log
