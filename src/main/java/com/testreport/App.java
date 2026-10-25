@@ -127,6 +127,12 @@ public final class App {
 
             Map<String, String> before = StatusSnapshot.load(statusFile);
             changes = StatusSnapshot.diff(before, StatusSnapshot.toMap(summary));
+            if (changes != null) {
+                for (StatusSnapshot.Change c : changes) {
+                    LOG.info(String.format("변경: %s %s %s  %s → %s", c.agency(), c.messageCode(), c.condition(),
+                            c.before().isEmpty() ? "-" : c.before(), c.after().isEmpty() ? "-" : c.after()));
+                }
+            }
             if (config.skipIfUnchanged() && !force && !dryRun && changes != null && changes.isEmpty()) {
                 LOG.info("직전 실행 대비 테스트 현황 변경이 없어 발송을 건너뜁니다.");
                 return;

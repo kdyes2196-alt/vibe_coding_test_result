@@ -99,6 +99,22 @@ scripts/verify-ledger.sh   → 원장 시나리오(samples/ledger_scenario.sql)�
 scripts/verify-ledger.sh 2026-01-01T10:00 2026-01-01T17:00   ← 원하는 시각으로 조회
 ```
 
+### 원장 거래를 추가해 가며 확인 (샌드박스 DB)
+
+프롬프트로 "KB국민카드 980002 정상 거래 넣고 돌려줘"처럼 요청하면 아래 명령으로 거래를 쌓고 실행 결과를 비교합니다.
+데이터는 `sandbox/ledger.mv.db` 파일에 남아 다음 실행까지 유지됩니다.
+
+```
+scripts/ledger-db.sh reset                         ← 시나리오 원장으로 초기화 (reset empty: 빈 원장)
+scripts/ledger-db.sh add KB국민카드 980002          ← 정상 거래 1건 (현재 시각)
+scripts/ledger-db.sh add 하나카드 980001 --stat 01  ← 비정상 거래
+scripts/ledger-db.sh add 삼성카드 980001 --cond 1   ← 추가조회조건(통신요금) 거래
+scripts/ledger-db.sh add 삼성카드 980001 --paging   ← 페이징 거래
+scripts/ledger-db.sh add 삼성카드 980004 --case 재신규실패 --at "2026-01-01 16:30:00"
+scripts/ledger-db.sh list [기관명]                  ← 원장 내용 확인
+scripts/ledger-db.sh run                           ← 실행 → 기관별 진척률(직전 대비 증감), 변경 항목, 메일 캡처
+```
+
 자동 테스트(`src/test`)는 실제 현황 엑셀(`samples/`)로 진척률 계산, `#REF!` 연결 복구,
 메일링 리스트 처리, 발송 일정, 가짜 SMTP 서버(GreenMail)를 통한 메일·첨부 발송, 변경 없음 시 발송 생략,
 오류 시 관리자 알림을 검증합니다.
