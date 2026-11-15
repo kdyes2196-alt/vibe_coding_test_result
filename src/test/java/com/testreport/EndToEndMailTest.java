@@ -43,7 +43,7 @@ class EndToEndMailTest {
         assertEquals(2, received.length, "TO 1명 + CC 1명 (사용여부 N 제외)");
         MimeMessage msg = received[0];
 
-        assertTrue(msg.getSubject().startsWith("[카드이동서비스 채널확대 통합테스트 현황]"), msg.getSubject());
+        assertTrue(msg.getSubject().startsWith("[업무명 통합테스트 현황]"), msg.getSubject());
         assertTrue(msg.getSubject().endsWith("전체 진척률 36.9%"), msg.getSubject());
         assertEquals(Set.of("owner@example.com"), emails(msg, Message.RecipientType.TO));
         assertEquals(Set.of("cc@example.com"), emails(msg, Message.RecipientType.CC));

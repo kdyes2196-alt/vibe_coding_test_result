@@ -29,7 +29,7 @@ final class TestFixtures {
         p.append("state.dir=").append(slash(dir.resolve("state"))).append('\n');
         p.append("log.dir=").append(slash(dir.resolve("logs"))).append('\n');
         p.append("output.fileNamePattern=테스트현황_{date}_{hour}시.xlsx\n");
-        p.append("report.title=카드이동서비스 채널확대 통합테스트 현황\n");
+        p.append("report.title=업무명 통합테스트 현황\n");
         p.append("mailingList.file=").append(slash(mailingList)).append('\n');
         p.append("mail.subject=[{title}] {datetime} 기준 - 전체 진척률 {progress}%\n");
         p.append("mail.from=bot@example.com\n");
