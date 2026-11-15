@@ -1,0 +1,15 @@
+전문구분,테스트케이스(포함 문구),최소건수,조건(SQL WHERE)
+# 기관별 시트에서 '전문구분'이 같고 '테스트 케이스'에 포함 문구가 들어간 행에 적용합니다.
+# 조건을 만족하는 거래가 최소건수 이상이면 그 행의 '확인 일시'와 '거래고유번호'를 채웁니다 (엑셀 수식이 O 로 판정).
+# 컬럼명: TRX_DV_CD 거래구분코드 / TRX_STAT_CD 거래상태(00 정상, 01 비정상) / ADD_INQ_COND 추가조회조건(NULL 전체, 1 통신요금, 2 아파트관리비)
+# [가정] PAGING_YN(페이징 여부), RENEW_YN(재신규여부), RSLT_CD(결과코드)는 원장에 있다고 가정한 컬럼입니다. 실제 컬럼명으로 바꿔 주세요.
+980001,전체 조회,1,"TRX_DV_CD = '980001' AND TRX_STAT_CD = '00' AND ADD_INQ_COND IS NULL"
+980001,요금별 조회,1,"TRX_DV_CD = '980001' AND TRX_STAT_CD = '00' AND ADD_INQ_COND IS NOT NULL"
+980001,페이징,1,"TRX_DV_CD = '980001' AND TRX_STAT_CD = '00' AND PAGING_YN = 'Y'"
+980002,상세 조회,1,"TRX_DV_CD = '980002' AND TRX_STAT_CD = '00'"
+980003,변경 접수,1,"TRX_DV_CD = '980003' AND TRX_STAT_CD = '00'"
+980004,변경 성공,1,"TRX_DV_CD = '980004' AND TRX_STAT_CD = '00' AND RENEW_YN = 'N' AND RSLT_CD = '0000'"
+980004,해지 실패,1,"TRX_DV_CD = '980004' AND TRX_STAT_CD = '00' AND RENEW_YN = 'N' AND RSLT_CD = '1920'"
+980004,무응답,1,"TRX_DV_CD = '980004' AND TRX_STAT_CD = '00' AND RENEW_YN = 'N' AND RSLT_CD = '1924'"
+980004,재신규성공,1,"TRX_DV_CD = '980004' AND TRX_STAT_CD = '00' AND RENEW_YN = 'Y' AND RSLT_CD = '0000'"
+980004,재신규실패,1,"TRX_DV_CD = '980004' AND TRX_STAT_CD = '00' AND RENEW_YN = 'Y' AND RSLT_CD = '1920'"

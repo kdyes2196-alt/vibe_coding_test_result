@@ -52,7 +52,7 @@ public final class AppConfig {
     public Path rawCountsFile()     { return getPath("rawCounts.file"); }
     public String rawSheetName()    { return get("rawCounts.sheetName", "원천데이터"); }
     public Path outputDir()         { return Path.of(get("output.dir", "output")); }
-    public String outputPattern()   { return get("output.fileNamePattern", "테스트현황_{datetime}.xlsx"); }
+    public String outputPattern()   { return get("output.fileNamePattern", "테스트현황_{date}_{hour}시.xlsx"); }
     public int outputKeepDays()     { return getInt("output.keepDays", 30); }
     public Path stateDir()          { return Path.of(get("state.dir", "state")); }
     public Path logDir()            { return Path.of(get("log.dir", "logs")); }
@@ -63,6 +63,10 @@ public final class AppConfig {
 
     public boolean mailEnabled()    { return getBool("mail.enabled", true); }
     public boolean skipIfUnchanged(){ return getBool("mail.skipIfUnchanged", false); }
+    /** true 면 보고서를 승인 대기로 두고, 담당자가 --approve 해야 메일링 리스트로 발송한다. */
+    public boolean approvalRequired() { return getBool("mail.approval.required", false); }
+    /** 승인 요청 메일을 받을 담당자 주소 (쉼표 구분, 비우면 알림 메일 없음) */
+    public String approvalNotifyTo() { return get("mail.approval.notifyTo", null); }
     public Path mailingListFile()   { return Path.of(get("mailingList.file", "config/mailing_list.csv")); }
     public String adminEmail()      { return get("mail.adminOnError", null); }
 
@@ -70,6 +74,16 @@ public final class AppConfig {
     public String mailPassword() {
         String env = System.getenv("MAIL_PASSWORD");
         return env != null && !env.isBlank() ? env : get("mail.password", "");
+    }
+
+    public boolean ledgerEnabled()  { return getBool("ledger.enabled", false); }
+    public Path ledgerRulesFile()   { return Path.of(get("ledger.rules.file", "config/ledger_rules.csv")); }
+    public boolean ledgerClearUnmatched() { return getBool("ledger.clearUnmatched", true); }
+
+    /** 원장 DB 비밀번호는 환경변수 LEDGER_DB_PASSWORD 를 우선 사용한다. */
+    public String ledgerPassword() {
+        String env = System.getenv("LEDGER_DB_PASSWORD");
+        return env != null && !env.isBlank() ? env : get("ledger.jdbc.password", "");
     }
 
     public List<LocalTime> scheduleTimes() {

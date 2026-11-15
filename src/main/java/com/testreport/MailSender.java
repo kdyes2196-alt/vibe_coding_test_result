@@ -40,7 +40,9 @@ final class MailSender {
                 case CC -> Message.RecipientType.CC;
                 case BCC -> Message.RecipientType.BCC;
             };
-            msg.addRecipient(type, new InternetAddress(r.email(), r.name(), "UTF-8"));
+            msg.addRecipient(type, r.name().isBlank()
+                    ? new InternetAddress(r.email())
+                    : new InternetAddress(r.email(), r.name(), "UTF-8"));
         }
 
         MimeBodyPart body = new MimeBodyPart();

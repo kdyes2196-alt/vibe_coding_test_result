@@ -38,6 +38,19 @@
             <artifactId>angus-mail</artifactId>
             <version>2.0.3</version>
         </dependency>
+        <!-- 원장 DB 조회용 JDBC 드라이버 (Oracle). 다른 DB 면 해당 드라이버로 교체 -->
+        <dependency>
+            <groupId>com.oracle.database.jdbc</groupId>
+            <artifactId>ojdbc11</artifactId>
+            <version>23.4.0.24.05</version>
+            <scope>runtime</scope>
+        </dependency>
+        <!-- H2: 클라우드 검증용 시나리오 DB (scripts/verify-ledger.sh) -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <version>2.2.224</version>
+        </dependency>
 
         <!-- 테스트: JUnit 5 + 가짜 SMTP 서버(GreenMail) -->
         <dependency>

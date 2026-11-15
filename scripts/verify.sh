@@ -6,13 +6,15 @@ cd "$(dirname "$0")/.."
 export LANG=C.UTF-8 LC_ALL=C.UTF-8
 RAW="${1:-samples/raw_counts_sample.csv}"
 
+rm -rf verify-output && mkdir -p verify-output
 echo "== 1. 빌드 + 자동 테스트 =="
-mvn -B -q package 2>&1 | grep -v -e JAVA_TOOL -e '^\s*at ' -e '실행 실패' || true
+if ! mvn -B package > verify-output/build.log 2>&1; then
+  grep -E "Tests run|FAIL|ERROR\]|expected" verify-output/build.log | head -40
+  echo "빌드/테스트 실패 (전체 로그: verify-output/build.log)"; exit 1
+fi
 grep -h "Tests run" target/surefire-reports/*.txt
-[ -f target/test-report-mailer.jar ] || { echo "빌드 실패"; exit 1; }
 
 echo; echo "== 2. 샘플 데이터로 실행 (--dry-run, 메일 미발송) =="
-rm -rf verify-output && mkdir -p verify-output
 CFG=verify-output/verify.properties
 sed "s#^rawCounts.file=.*#rawCounts.file=${RAW}#" config/verify.properties > "$CFG"
 java -Dsun.jnu.encoding=UTF-8 -jar target/test-report-mailer.jar --config "$CFG" --dry-run 2>&1 | grep -v JAVA_TOOL

@@ -56,7 +56,7 @@ class EndToEndMailTest {
 
         BodyPart attachment = parts.getBodyPart(1);
         String fileName = MimeUtility.decodeText(attachment.getFileName());
-        assertTrue(fileName.startsWith("테스트현황_") && fileName.endsWith(".xlsx"), fileName);
+        assertTrue(fileName.matches("테스트현황_\\d{8}_\\d{2}시\\.xlsx"), fileName);
         try (InputStream in = attachment.getInputStream(); XSSFWorkbook wb = new XSSFWorkbook(in)) {
             assertTrue(wb.getSheetIndex("원천데이터") >= 0, "첨부 엑셀에 원천데이터 시트 포함");
             assertEquals(14, wb.getNumberOfSheets() - 1, "원본 14개 시트 유지");
